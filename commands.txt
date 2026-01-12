@@ -1,0 +1,20 @@
+curl -X POST http://localhost:8081/api/publish      -H "Content-Type: text/plain"      -d "Nuovo Tutorial dal Producer Spring Boot"
+
+ curl http://localhost:6868/api/test
+ 
+ 
+ docker exec -it docker-compose-spring-boot-mongodb-mongo_db-1 mongosh -u root -p 123456 --authenticationDatabase admin
+ 
+ use bezkoder_db
+ 
+ db.tutorials.find().pretty()
+ 
+ db.tutorials.countDocuments()
+ 
+ 
+ 
+kubectl port-forward svc/producer-service 8081:8081
+
+
+kubectl port-forward svc/app-service 6868:8080
+
