@@ -1,0 +1,463 @@
+# k8s-3-brokers.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  MONGO_USERNAME: "root"
+  MONGO_PASSWORD: "123456"
+---
+# ConfigMap per i bootstrap servers di tutti e 3 i broker
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-config
+data:
+  KAFKA_BOOTSTRAP_SERVERS: "kafka1-service:29092,kafka2-service:29093,kafka3-service:29094"
+---
+# 1. Zookeeper
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper-service
+spec:
+  selector:
+    app: zookeeper
+  ports:
+  - port: 2181
+    targetPort: 2181
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zookeeper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zookeeper
+  template:
+    metadata:
+      labels:
+        app: zookeeper
+    spec:
+      containers:
+      - name: zookeeper
+        image: confluentinc/cp-zookeeper:7.3.0
+        ports:
+        - containerPort: 2181
+        env:
+        - name: ZOOKEEPER_CLIENT_PORT
+          value: "2181"
+        - name: ZOOKEEPER_TICK_TIME
+          value: "2000"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+        readinessProbe:
+          tcpSocket:
+            port: 2181
+          initialDelaySeconds: 10
+          periodSeconds: 5
+---
+# 2. Kafka Broker 1
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka1-service
+spec:
+  selector:
+    app: kafka1
+  ports:
+  - port: 29092
+    targetPort: 29092
+    name: internal
+  - port: 9092
+    targetPort: 9092
+    name: external
+    nodePort: 30010
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka1
+  template:
+    metadata:
+      labels:
+        app: kafka1
+    spec:
+      containers:
+      - name: kafka
+        image: confluentinc/cp-kafka:7.3.0
+        ports:
+        - containerPort: 29092
+          name: internal
+        - containerPort: 9092
+          name: external
+        env:
+        - name: KAFKA_BROKER_ID
+          value: "1"
+        - name: KAFKA_ZOOKEEPER_CONNECT
+          value: "zookeeper-service:2181"
+        # Due listener: interno per comunicazione tra broker, esterno per client
+        - name: KAFKA_LISTENERS
+          value: "PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092"
+        - name: KAFKA_ADVERTISED_LISTENERS
+          value: "PLAINTEXT://kafka1-service:29092,PLAINTEXT_HOST://kafka1-service:9092"
+        - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+          value: "PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+        - name: KAFKA_INTER_BROKER_LISTENER_NAME
+          value: "PLAINTEXT"
+        # Configurazione cluster a 3 nodi
+        - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+          value: "3"
+        - name: KAFKA_DEFAULT_REPLICATION_FACTOR
+          value: "3"
+        - name: KAFKA_MIN_INSYNC_REPLICAS
+          value: "2"
+        - name: KAFKA_NUM_PARTITIONS
+          value: "3"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        readinessProbe:
+          tcpSocket:
+            port: 9092
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 9092
+          initialDelaySeconds: 60
+          periodSeconds: 15
+---
+# 3. Kafka Broker 2
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka2-service
+spec:
+  selector:
+    app: kafka2
+  ports:
+  - port: 29093
+    targetPort: 29093
+    name: internal
+  - port: 9093
+    targetPort: 9093
+    name: external
+    nodePort: 30011
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka2
+  template:
+    metadata:
+      labels:
+        app: kafka2
+    spec:
+      containers:
+      - name: kafka
+        image: confluentinc/cp-kafka:7.3.0
+        ports:
+        - containerPort: 29093
+          name: internal
+        - containerPort: 9093
+          name: external
+        env:
+        - name: KAFKA_BROKER_ID
+          value: "2"
+        - name: KAFKA_ZOOKEEPER_CONNECT
+          value: "zookeeper-service:2181"
+        - name: KAFKA_LISTENERS
+          value: "PLAINTEXT://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9093"
+        - name: KAFKA_ADVERTISED_LISTENERS
+          value: "PLAINTEXT://kafka2-service:29093,PLAINTEXT_HOST://kafka2-service:9093"
+        - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+          value: "PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+        - name: KAFKA_INTER_BROKER_LISTENER_NAME
+          value: "PLAINTEXT"
+        - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+          value: "3"
+        - name: KAFKA_DEFAULT_REPLICATION_FACTOR
+          value: "3"
+        - name: KAFKA_MIN_INSYNC_REPLICAS
+          value: "2"
+        - name: KAFKA_NUM_PARTITIONS
+          value: "3"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        readinessProbe:
+          tcpSocket:
+            port: 9093
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 9093
+          initialDelaySeconds: 60
+          periodSeconds: 15
+---
+# 4. Kafka Broker 3
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka3-service
+spec:
+  selector:
+    app: kafka3
+  ports:
+  - port: 29094
+    targetPort: 29094
+    name: internal
+  - port: 9094
+    targetPort: 9094
+    name: external
+    nodePort: 30012
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka3
+  template:
+    metadata:
+      labels:
+        app: kafka3
+    spec:
+      containers:
+      - name: kafka
+        image: confluentinc/cp-kafka:7.3.0
+        ports:
+        - containerPort: 29094
+          name: internal
+        - containerPort: 9094
+          name: external
+        env:
+        - name: KAFKA_BROKER_ID
+          value: "3"
+        - name: KAFKA_ZOOKEEPER_CONNECT
+          value: "zookeeper-service:2181"
+        - name: KAFKA_LISTENERS
+          value: "PLAINTEXT://0.0.0.0:29094,PLAINTEXT_HOST://0.0.0.0:9094"
+        - name: KAFKA_ADVERTISED_LISTENERS
+          value: "PLAINTEXT://kafka3-service:29094,PLAINTEXT_HOST://kafka3-service:9094"
+        - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+          value: "PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+        - name: KAFKA_INTER_BROKER_LISTENER_NAME
+          value: "PLAINTEXT"
+        - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+          value: "3"
+        - name: KAFKA_DEFAULT_REPLICATION_FACTOR
+          value: "3"
+        - name: KAFKA_MIN_INSYNC_REPLICAS
+          value: "2"
+        - name: KAFKA_NUM_PARTITIONS
+          value: "3"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        readinessProbe:
+          tcpSocket:
+            port: 9094
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 9094
+          initialDelaySeconds: 60
+          periodSeconds: 15
+---
+# 5. MongoDB
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-service
+spec:
+  selector:
+    app: mongo
+  ports:
+    - port: 27017
+      targetPort: 27017
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo
+spec:
+  serviceName: "mongo-service"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo
+  template:
+    metadata:
+      labels:
+        app: mongo
+    spec:
+      containers:
+      - name: mongo
+        image: mongo:5.0.2
+        ports:
+        - containerPort: 27017
+        env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: MONGO_USERNAME
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: MONGO_PASSWORD
+        volumeMounts:
+        - name: mongo-storage
+          mountPath: /data/db
+  volumeClaimTemplates:
+  - metadata:
+      name: mongo-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+    spec:
+      containers:
+      - name: app
+        image: tomasconti02/my-test:v1
+        ports:
+        - containerPort: 8080
+        env:
+        - name: SPRING_DATA_MONGODB_URI
+          value: "mongodb://root:123456@mongo-service:27017/bezkoder_db?authSource=admin"
+        - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+          valueFrom:
+            configMapKeyRef:
+              name: kafka-config
+              key: KAFKA_BOOTSTRAP_SERVERS
+        - name: SPRING_KAFKA_CONSUMER_GROUP_ID
+          value: "my-group"
+        # Cambia i probe da HTTP a TCP
+        readinessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 40
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+spec:
+  type: NodePort
+  selector:
+    app: app
+  ports:
+  - port: 8080
+    targetPort: 8080
+    nodePort: 30001
+---
+# 7. Producer App
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: producer-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: producer-app
+  template:
+    metadata:
+      labels:
+        app: producer-app
+    spec:
+      containers:
+      - name: producer-app
+        image: tomasconti02/my-producer-app:v1
+        ports:
+        - containerPort: 8081
+        env:
+        - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+          valueFrom:
+            configMapKeyRef:
+              name: kafka-config
+              key: KAFKA_BOOTSTRAP_SERVERS
+        - name: SERVER_PORT
+          value: "8081"
+        readinessProbe:
+          tcpSocket:
+            port: 8081
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 8081
+          initialDelaySeconds: 60
+          periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: producer-service
+spec:
+  type: NodePort
+  selector:
+    app: producer-app
+  ports:
+  - port: 8081
+    targetPort: 8081
+    nodePort: 30002

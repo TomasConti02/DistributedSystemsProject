@@ -7,16 +7,18 @@ services:
     environment:
       - MONGO_INITDB_ROOT_USERNAME=root
       - MONGO_INITDB_ROOT_PASSWORD=123456
+#Espone la porta 7017 sul tuo computer (host), che punta alla porta standard 27017 del container.
     ports:
       - "7017:27017"
     volumes:
+#volume denominato mongodb_data per rendere i dati persistenti; se spegni i container, i dati non andranno persi.
       - mongodb_data:/data/db
 
   # Zookeeper è necessario per gestire lo stato di Kafka
   zookeeper:
     image: confluentinc/cp-zookeeper:7.3.0
     environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_CLIENT_PORT: 2181 #porta di accesso a kafka
       ZOOKEEPER_TICK_TIME: 2000
 
   # Il Broker Kafka
@@ -25,30 +27,41 @@ services:
     depends_on:
       - zookeeper
     ports:
-      - "9092:9092"
+      - "9092:9092" #mapping con l'host
     environment:
       KAFKA_BROKER_ID: 1
+#Si collega a Zookeeper tramite l'indirizzo interno zookeeper:2181
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+#PLAINTEXT: Usato per la comunicazione interna tra i container Docker (porta 29092)
+#PLAINTEXT_HOST: Usato per permettere a te, dal tuo desktop, di collegarti a Kafka su localhost:9092.
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      #indichiamo a kafka che la comunicazione è in chiaro e non criptata
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      #diciamo a kafka il canale per la comunicazione interna
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-
+#--------------------------------------------------------#
+#--------------------------------------------------------#
+#configurazione mie applcazioni
   app:
     image: my-test:v1
     restart: on-failure
-    depends_on:
+    depends_on: #importante per l'ordine
       - mongo_db
       - kafka
     ports:
+#Mappa la porta interna dell'app (8080) sulla porta 6868 del tuo computer. Potrai accedere alle API di questo servizio su http://localhost:6868.
       - "6868:8080"
     environment:
       # Aggiungiamo la configurazione Kafka a Spring
+      #sovrascrivo application.properties
+      #Punta a kafka:29092 (la porta interna dedicata alla rete Docker).
       SPRING_APPLICATION_JSON: '{
           "spring.data.mongodb.uri" : "mongodb://root:123456@mongo_db:27017/bezkoder_db?authSource=admin",
           "spring.kafka.bootstrap-servers" : "kafka:29092",
           "spring.kafka.consumer.group-id" : "my-group"
         }'
+        #a deafult la porta è la 8080
     volumes:
       - .m2:/root/.m2
     stdin_open: true
