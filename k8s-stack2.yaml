@@ -372,7 +372,7 @@ spec:
     spec:
       containers:
       - name: app
-        image: tomasconti02/my-test:v1
+        image: tomasconti02/my-test:v2
         ports:
         - containerPort: 8080
         env:
@@ -427,7 +427,7 @@ spec:
     spec:
       containers:
       - name: producer-app
-        image: tomasconti02/my-producer-app:v1
+        image: tomasconti02/my-producer-app:v2
         ports:
         - containerPort: 8081
         env:
