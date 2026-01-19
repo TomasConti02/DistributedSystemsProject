@@ -1,0 +1,124 @@
+# Install the Flux Operator using Helm from the OCI registry.
+# This operator will manage the lifecycle and upgrades of the Flux components.
+helm install flux-operator oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator \
+  --namespace flux-system \
+  --create-namespace
+
+# Define the FluxInstance to deploy the specific controllers required for GitOps.
+apiVersion: fluxcd.controlplane.io/v1
+kind: FluxInstance
+metadata:
+  name: flux
+  namespace: flux-system
+spec:
+  distribution:
+    version: "2.x"             # Tracks the stable Flux v2 distribution
+    registry: "ghcr.io/fluxcd" # Official Flux container registry
+  components:
+    - source-controller        # Mandatory: Handles Git/OCI/S3 artifacts
+    - kustomize-controller     # Mandatory: Applies Kubernetes manifests and Kustomize overlays
+    - helm-controller          # Optional: Manages HelmChart releases
+    - notification-controller  # Optional: Handles inbound/outbound events (webhooks/alerts)
+  cluster:
+    type: kubernetes
+    multitenant: false         # Set to false for full cluster-admin permissions in this instance
+
+# Declare the GitRepository source to track changes in the remote GitHub repository.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: dist-systems-project
+  namespace: flux-system
+spec:
+  interval: 1m0s               # Flux will check for new commits every 60 seconds
+  url: https://github.com/TomasConti02/DistributedSystemsProject
+  ref:
+    branch: main               # The specific branch to watch for updates
+
+
+# Configure how Flux reconciles the manifests from the GitRepository into the cluster.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: dist-systems-sync
+  namespace: flux-system
+spec:
+  interval: 1m0s               # Re-apply manifests every minute to prevent drift
+  path: "./"                   # Look for the kustomization.yaml file in the root directory
+  prune: true                  # Garbage collection: deletes resources removed from Git
+  wait: true                   # Health check: waits for all resources to be 'Ready' before finishing
+  sourceRef:
+    kind: GitRepository
+    name: dist-systems-project
+  targetNamespace: default     # Forces all deployed resources into the 'default' namespace
+
+
+
+# Local Kustomize configuration file (must be named 'kustomization.yaml' in your repo).
+# This acts as a filter to ensure Flux only deploys the desired stack version.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - k8s-stack2.yaml            # Only include this specific file, ignoring k8s-stack.yaml or others
+#---------------------------------------------------#
+#---------------------------------------------------#
+#---------------------------------------------------#
+
+kubectl get pods -n flux-system
+NAME                                       READY   STATUS    RESTARTS   AGE
+flux-operator-846d7944b9-k47lc             1/1     Running   0          43m
+helm-controller-6b9755b54b-shvsk           1/1     Running   0          37m
+kustomize-controller-6d9dc86c5d-s42kf      1/1     Running   0          37m
+notification-controller-68d44797f8-8lkqq   1/1     Running   0          37m
+source-controller-56c84b569f-g6bnn         1/1     Running   0          37m
+
+#---------------------------------------------------#
+#---------------------------------------------------#
+#---------------------------------------------------#
+ kubectl get pods -n default -o wide
+NAME                           READY   STATUS    RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+app-657989bd7b-sffrf           1/1     Running   0          34m   10.244.2.5   kind-worker2   <none>           <none>
+kafka1-5b6c5db788-xdqml        1/1     Running   0          34m   10.244.1.4   kind-worker    <none>           <none>
+kafka2-7dbcf7bdb-678pd         1/1     Running   0          34m   10.244.2.6   kind-worker2   <none>           <none>
+kafka3-6f4c987cfb-9pvh9        1/1     Running   0          34m   10.244.1.5   kind-worker    <none>           <none>
+mongo-0                        1/1     Running   0          34m   10.244.2.9   kind-worker2   <none>           <none>
+producer-app-5948bb968-x2j5w   1/1     Running   0          34m   10.244.2.7   kind-worker2   <none>           <none>
+zookeeper-5cff8b598f-cmmjn     1/1     Running   0          34m   10.244.1.6   kind-worker    <none>           <none>
+
+#---------------------------------------------------#
+#---------------------------------------------------#
+#---------------------------------------------------#
+
+kubectl get svc,endpoints -o wide
+Warning: v1 Endpoints is deprecated in v1.33+; use discovery.k8s.io/v1 EndpointSlice
+NAME                        TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)                          AGE   SELECTOR
+service/app-service         NodePort    10.96.220.145   <none>        8080:30001/TCP                   36m   app=app
+service/kafka1-service      NodePort    10.96.62.244    <none>        29092:31224/TCP,9092:30010/TCP   36m   app=kafka1
+service/kafka2-service      NodePort    10.96.162.69    <none>        29093:30687/TCP,9093:30011/TCP   36m   app=kafka2
+service/kafka3-service      NodePort    10.96.107.39    <none>        29094:31435/TCP,9094:30012/TCP   36m   app=kafka3
+service/kubernetes          ClusterIP   10.96.0.1       <none>        443/TCP                          47m   <none>
+service/mongo-service       ClusterIP   None            <none>        27017/TCP                        36m   app=mongo
+service/producer-service    NodePort    10.96.209.201   <none>        8081:30002/TCP                   36m   app=producer-app
+service/zookeeper-service   ClusterIP   10.96.154.28    <none>        2181/TCP                         36m   app=zookeeper
+
+NAME                          ENDPOINTS                          AGE
+endpoints/app-service         10.244.2.5:8080                    36m
+endpoints/kafka1-service      10.244.1.4:9092,10.244.1.4:29092   36m
+endpoints/kafka2-service      10.244.2.6:29093,10.244.2.6:9093   36m
+endpoints/kafka3-service      10.244.1.5:29094,10.244.1.5:9094   36m
+endpoints/kubernetes          172.18.0.4:6443                    47m
+endpoints/mongo-service       10.244.2.9:27017                   36m
+endpoints/producer-service    10.244.2.7:8081                    36m
+endpoints/zookeeper-service   10.244.1.6:2181                    36m
+
+#---------------------------------------------------#
+#---------------------------------------------------#
+#---------------------------------------------------#
+
+kubectl get pvc,pv
+NAME                                          STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+persistentvolumeclaim/mongo-storage-mongo-0   Bound    pvc-8d3e9b78-672b-45e0-8a38-d74e45d21b7d   1Gi        RWO            standard       <unset>                 38m
+
+NAME                                                        CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS   CLAIM                           STORAGECLASS   VOLUMEATTRIBUTESCLASS   REASON   AGE
+persistentvolume/pvc-8d3e9b78-672b-45e0-8a38-d74e45d21b7d   1Gi        RWO            Delete           Bound    default/mongo-storage-mongo-0   standard       <unset>                          38m
