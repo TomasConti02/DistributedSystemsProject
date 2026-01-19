@@ -8,11 +8,6 @@ curl -X POST http://localhost:8081/api/publish \
 #-----------------------------------------------#
 [
   {
-    _id: ObjectId("696b897cfe059040c695a507"),
-    title: 'Nuovo Tutorial dal Producer Spring Boot',
-    _class: 'com.bezkoder.spring.data.mongodb.model.Tutorial'
-  },
-  {
     _id: ObjectId("696bf28f6538ab0d90628504"),
     title: 'hello Spring Boot1',
     _class: 'com.bezkoder.spring.data.mongodb.model.Tutorial'

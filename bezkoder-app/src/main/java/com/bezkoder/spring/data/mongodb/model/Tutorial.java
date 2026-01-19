@@ -2,7 +2,7 @@ package com.bezkoder.spring.data.mongodb.model;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
-
+//mapping Tutorial as a 
 @Document(collection = "tutorials")
 public class Tutorial {
     @Id 
